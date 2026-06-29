@@ -228,7 +228,12 @@ def allocation_chart(backtest_results: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def sensitivity_heatmap(results: pd.DataFrame, value_col: str, title: str) -> go.Figure:
+def sensitivity_heatmap(
+    results: pd.DataFrame,
+    value_col: str,
+    title: str,
+    color_scale: str = "RdYlGn",
+) -> go.Figure:
     """Plot threshold by z-score-window sensitivity results."""
 
     if results.empty:
@@ -239,7 +244,7 @@ def sensitivity_heatmap(results: pd.DataFrame, value_col: str, title: str) -> go
         pivot,
         text_auto=".2f",
         aspect="auto",
-        color_continuous_scale="RdYlGn",
+        color_continuous_scale=color_scale,
         title=title,
     )
     fig.update_layout(template="plotly_white")

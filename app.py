@@ -1,4 +1,4 @@
-﻿"""Streamlit app for fixed income duration timing research."""
+"""Streamlit app for fixed income duration timing research."""
 
 from __future__ import annotations
 
@@ -321,32 +321,83 @@ with tabs[0]:
     st.dataframe(signals[display_cols].dropna(how="all").tail(24), use_container_width=True)
 
 with tabs[1]:
-    contributions = signal_contributions(signals, weights)
-    st.plotly_chart(contribution_chart(contributions), use_container_width=True)
+    valid_driver_rows = signals.dropna(subset=["Duration Score"])
+    if valid_driver_rows.empty:
+        st.info("Not enough signal history to inspect drivers.")
+    else:
+        selected_driver_date = st.date_input(
+            "Driver date",
+            value=valid_driver_rows.index[-1].date(),
+            min_value=valid_driver_rows.index[0].date(),
+            max_value=valid_driver_rows.index[-1].date(),
+            help="Pick any date. The app will use the latest completed model month on or before that date.",
+        )
+        selected_timestamp = valid_driver_rows.loc[valid_driver_rows.index <= pd.Timestamp(selected_driver_date)].index[-1]
+        selected_row = signals.loc[selected_timestamp]
+        contributions = signal_contributions(signals, weights, as_of=selected_timestamp)
 
-    score_cols = st.columns(2)
-    with score_cols[0]:
-        st.subheader("Latest Signal Contribution")
-        if contributions.empty:
-            st.info("Not enough signal history to calculate contributions.")
-        else:
-            st.dataframe(
-                contributions.style.format(
-                    {
-                        "Z-Score": "{:.2f}",
-                        "Normalized Weight": "{:.1%}",
-                        "Score Contribution": "{:.2f}",
-                    }
-                ),
-                use_container_width=True,
-            )
-    with score_cols[1]:
-        st.subheader("Distance to Regime Boundaries")
-        boundaries = distance_to_regime_change(current_score, threshold)
-        if boundaries.empty:
-            st.info("Not enough history to calculate boundary distance.")
-        else:
-            st.dataframe(boundaries.style.format({"Score Needed": "{:.2f}", "Distance": "{:.2f}"}), use_container_width=True)
+        st.caption(f"Inspecting model drivers for {selected_timestamp.date()}.")
+        selected_cols = st.columns(4)
+        selected_cols[0].metric(
+            "Same-month score",
+            f"{selected_row['Duration Score']:.2f}",
+            help=(
+                "What the model says after the selected month is over. Useful for "
+                "understanding the drivers, but it would not have been known at "
+                "the start of that month."
+            ),
+        )
+        selected_cols[1].metric(
+            "Same-month regime",
+            selected_row["Regime"],
+            help=(
+                "The duration call after seeing the selected month's data. Think "
+                "of this as the model's end-of-month read, not the trade used "
+                "during that month."
+            ),
+        )
+        selected_cols[2].metric(
+            "Lagged decision score",
+            f"{selected_row['Decision Score']:.2f}" if pd.notna(selected_row["Decision Score"]) else "n/a",
+            help=(
+                "What the model would have known before the selected month began. "
+                "This is the score used for the backtest allocation."
+            ),
+        )
+        selected_cols[3].metric(
+            "Lagged decision regime",
+            selected_row["Decision Regime"] if pd.notna(selected_row["Decision Regime"]) else "n/a",
+            help=(
+                "The actual backtest position for the selected month: SHY for "
+                "underweight, IEF for neutral, or TLT for overweight."
+            ),
+        )
+
+        st.plotly_chart(contribution_chart(contributions), use_container_width=True)
+
+        score_cols = st.columns(2)
+        with score_cols[0]:
+            st.subheader("Selected Signal Contribution")
+            if contributions.empty:
+                st.info("Not enough signal history to calculate contributions.")
+            else:
+                st.dataframe(
+                    contributions.drop(columns=["Date"], errors="ignore").style.format(
+                        {
+                            "Z-Score": "{:.2f}",
+                            "Normalized Weight": "{:.1%}",
+                            "Score Contribution": "{:.2f}",
+                        }
+                    ),
+                    use_container_width=True,
+                )
+        with score_cols[1]:
+            st.subheader("Distance to Regime Boundaries")
+            boundaries = distance_to_regime_change(selected_row["Duration Score"], threshold)
+            if boundaries.empty:
+                st.info("Not enough history to calculate boundary distance.")
+            else:
+                st.dataframe(boundaries.style.format({"Score Needed": "{:.2f}", "Distance": "{:.2f}"}), use_container_width=True)
 
 with tabs[2]:
     st.plotly_chart(regime_chart(yields, signals), use_container_width=True)
@@ -489,7 +540,15 @@ with tabs[4]:
         with heat_cols[0]:
             st.plotly_chart(sensitivity_heatmap(sensitivity, "Sharpe Ratio", "Sensitivity: Sharpe Ratio"), use_container_width=True)
         with heat_cols[1]:
-            st.plotly_chart(sensitivity_heatmap(sensitivity, "Changes Per Year", "Sensitivity: Changes Per Year"), use_container_width=True)
+            st.plotly_chart(
+                sensitivity_heatmap(
+                    sensitivity,
+                    "Changes Per Year",
+                    "Sensitivity: Changes Per Year",
+                    color_scale="RdYlGn_r",
+                ),
+                use_container_width=True,
+            )
         st.dataframe(
             sensitivity.style.format(
                 {

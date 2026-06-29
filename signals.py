@@ -121,26 +121,34 @@ def build_duration_signals(
     return result
 
 
-def signal_contributions(signals: pd.DataFrame, weights: dict[str, float]) -> pd.DataFrame:
-    """Return each signal's latest contribution to the combined score."""
+def signal_contributions(
+    signals: pd.DataFrame,
+    weights: dict[str, float],
+    as_of: pd.Timestamp | None = None,
+) -> pd.DataFrame:
+    """Return each signal's contribution to the combined score for a date."""
 
     z_cols = [col for col in signals.columns if col.endswith(" Z")]
     if not z_cols:
         return pd.DataFrame()
 
-    latest = signals.dropna(subset=z_cols, how="all").tail(1)
-    if latest.empty:
+    available = signals.dropna(subset=z_cols, how="all")
+    if as_of is not None:
+        available = available.loc[available.index <= pd.Timestamp(as_of)]
+    if available.empty:
         return pd.DataFrame()
 
+    selected = available.tail(1)
     names = [col.replace(" Z", "") for col in z_cols]
     normalized = normalize_weights(weights, names)
     rows = []
     for name in names:
-        z_value = latest[f"{name} Z"].iloc[0]
+        z_value = selected[f"{name} Z"].iloc[0]
         weight = normalized.get(name, np.nan)
         contribution = z_value * weight if pd.notna(z_value) and pd.notna(weight) else np.nan
         rows.append(
             {
+                "Date": selected.index[0],
                 "Signal": name,
                 "Z-Score": z_value,
                 "Normalized Weight": weight,
