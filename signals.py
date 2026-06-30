@@ -1,4 +1,4 @@
-"""Duration timing signal construction.
+﻿"""Duration timing signal construction.
 
 The signals are intentionally simple and transparent. They are inspired by
 style-premia concepts commonly used in fixed income research:
@@ -49,6 +49,7 @@ def build_raw_signals(
     carry_choice: str,
     momentum_lookback: int,
     value_choice: str,
+    risk_premium_method: str = "Simple proxy",
 ) -> pd.DataFrame:
     """Create raw, economically signed duration timing signals."""
 
@@ -70,9 +71,12 @@ def build_raw_signals(
     else:
         signals["Value"] = yields["10Y Treasury"]
 
-    # This is a practical proxy, not the survey-expectations BRP estimate used
-    # in richer academic implementations.
-    signals["Risk Premium Proxy"] = yields["10Y Treasury"] - brp_short_rate
+    if risk_premium_method == "SPF-based" and "SPF Expected Short Rate" in yields.columns:
+        signals["Risk Premium Proxy"] = yields["10Y Treasury"] - yields["SPF Expected Short Rate"]
+    else:
+        # This is a practical proxy, not the survey-expectations BRP estimate used
+        # in richer academic implementations.
+        signals["Risk Premium Proxy"] = yields["10Y Treasury"] - brp_short_rate
 
     return signals
 
@@ -85,6 +89,7 @@ def build_duration_signals(
     weights: dict[str, float],
     threshold: float,
     value_choice: str = "Nominal 10Y yield",
+    risk_premium_method: str = "Simple proxy",
 ) -> pd.DataFrame:
     """Build z-scored signals, combined score, and lagged regime decisions."""
 
@@ -93,6 +98,7 @@ def build_duration_signals(
         carry_choice=carry_choice,
         momentum_lookback=momentum_lookback,
         value_choice=value_choice,
+        risk_premium_method=risk_premium_method,
     )
 
     zscores = raw.apply(lambda col: rolling_zscore(col, rolling_window))

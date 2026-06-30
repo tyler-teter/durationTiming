@@ -1,4 +1,4 @@
-# Fixed Income Duration Timing Research
+﻿# Fixed Income Duration Timing Research
 
 Built by Tyler Teter, CFP®, CFA | [LinkedIn](https://www.linkedin.com/in/tylerteter/)
 
@@ -39,6 +39,10 @@ The backtest uses Yahoo Finance ETF proxies:
 - `TLT`: long Treasury exposure
 
 These ETF proxies are convenient research instruments, not perfect bond index histories.
+
+The optional SPF-based bond risk premium signal uses the Philadelphia Fed Survey of Professional Forecasters mean-level workbook:
+
+- `BILL10`: long-run T-bill forecast, used as a survey-based expected short-rate proxy
 
 ## Installation
 
@@ -102,13 +106,23 @@ A high value z-score means yields are high versus their own rolling history, whi
 
 ### Risk Premium Proxy
 
-The risk premium proxy uses:
+The app supports two risk premium methods.
+
+The simple proxy uses:
 
 ```text
 10Y Treasury yield - short Treasury yield
 ```
 
-This is a simple practical proxy. A high z-score suggests unusually high compensation for bearing longer-duration Treasury risk.
+This is a practical proxy, but it can overlap heavily with carry.
+
+The SPF-based proxy uses:
+
+```text
+10Y Treasury yield - SPF expected short-rate proxy
+```
+
+The SPF expected short-rate proxy comes from the Philadelphia Fed Survey of Professional Forecasters `BILL10` series. The data is quarterly, dated at quarter-end, and forward-filled to month-end. A high z-score suggests unusually high compensation for bearing longer-duration Treasury risk.
 
 ## Rolling Z-Scores
 

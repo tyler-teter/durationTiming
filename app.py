@@ -30,7 +30,7 @@ from charts import (
     signal_zscore_chart,
     yield_chart,
 )
-from data import load_etf_prices, load_fred_yields, make_monthly_returns, make_monthly_yields
+from data import add_spf_expected_short_rate, load_etf_prices, load_fred_yields, make_monthly_returns, make_monthly_yields
 from signals import build_duration_signals, distance_to_regime_change, signal_contributions
 
 
@@ -41,11 +41,20 @@ st.set_page_config(
 )
 
 
-@st.cache_data(show_spinner=False)
-def cached_yields(start: date, end: date) -> pd.DataFrame:
-    """Cache FRED data during a Streamlit session."""
+SPF_CACHE_VERSION = "spf-decimal-date-fix-2026-06-29"
 
-    return make_monthly_yields(load_fred_yields(start=start, end=end))
+
+@st.cache_data(show_spinner=False)
+def cached_yields(start: date, end: date, cache_version: str = SPF_CACHE_VERSION) -> pd.DataFrame:
+    """Cache FRED and SPF data during a Streamlit session."""
+
+    _ = cache_version
+    monthly = make_monthly_yields(load_fred_yields(start=start, end=end))
+    try:
+        monthly = add_spf_expected_short_rate(monthly)
+    except Exception as exc:
+        monthly["SPF Load Error"] = str(exc)
+    return monthly
 
 
 @st.cache_data(show_spinner=False)
@@ -64,6 +73,7 @@ def run_sensitivity_grid(
     carry_choice: str,
     value_choice: str,
     momentum_lookback: int,
+    risk_premium_method: str,
     transaction_cost_bps: float,
     windows: tuple[int, ...],
     thresholds: tuple[float, ...],
@@ -81,6 +91,7 @@ def run_sensitivity_grid(
                 weights=weights,
                 threshold=threshold_value,
                 value_choice=value_choice,
+                risk_premium_method=risk_premium_method,
             )
             grid_backtest = run_backtest(
                 etf_returns,
@@ -130,7 +141,7 @@ def percent_style(df: pd.DataFrame, percent_cols: list[str], number_cols: list[s
 
 
 st.title("Fixed Income Duration Timing Research")
-st.markdown("Built by Tyler Teter, CFP®, CFA | [LinkedIn](https://www.linkedin.com/in/tylerteter/)")
+st.markdown("Built by Tyler Teter, CFPÂ®, CFA | [LinkedIn](https://www.linkedin.com/in/tylerteter/)")
 st.caption(
     "A style-premia-inspired model for evaluating when signals favor extending, "
     "staying neutral, or shortening Treasury duration."
@@ -185,6 +196,15 @@ with st.sidebar:
     momentum_lookback = st.slider("Momentum lookback (months)", 3, 24, 12, 1)
     carry_choice = st.radio("Carry spread", ["10Y-3M", "10Y-2Y"], horizontal=True)
     value_choice = st.radio("Value signal", ["Nominal 10Y yield", "Real yield proxy"])
+    risk_premium_method = st.radio(
+        "Risk premium method",
+        ["SPF-based", "Simple proxy"],
+        help=(
+            "SPF-based uses the Philadelphia Fed Survey of Professional Forecasters "
+            "BILL10 long-run T-bill forecast as expected future short rates. Simple "
+            "proxy uses the same short Treasury yield as the carry spread."
+        ),
+    )
     threshold = st.slider(
         "Overweight / underweight threshold",
         0.10,
@@ -256,10 +276,11 @@ with st.sidebar:
         value=1.0,
         step=0.25,
         help=(
-            "Simple bond-risk-premium proxy using the 10Y yield minus a short "
-            "Treasury yield. High z-score: unusually high compensation for bearing "
-            "longer-duration Treasury risk. Low z-score: unusually low compensation, "
-            "so the model is less interested in extending duration."
+            "Bond-risk-premium signal using the selected risk premium method. "
+            "SPF-based uses 10Y yield minus the Philadelphia Fed SPF expected "
+            "short-rate proxy; simple proxy uses 10Y yield minus a short Treasury "
+            "yield. High z-score: unusually high compensation for bearing duration "
+            "risk. Low z-score: unusually low compensation."
         ),
     )
 
@@ -276,6 +297,29 @@ except Exception as exc:
     st.error(f"Could not load FRED data: {exc}")
     st.stop()
 
+if risk_premium_method == "SPF-based" and "SPF Load Error" in yields.columns:
+    st.warning(f"SPF data could not be loaded, so the risk premium signal will fall back to the simple proxy. Details: {yields['SPF Load Error'].iloc[0]}")
+
+if "SPF Expected Short Rate" in yields.columns:
+    spf_download = yields[["10Y Treasury", "SPF Expected Short Rate"]].dropna().copy()
+    spf_download["SPF-Based Risk Premium"] = (
+        spf_download["10Y Treasury"] - spf_download["SPF Expected Short Rate"]
+    )
+    spf_download = spf_download.reset_index().rename(columns={"index": "Date"})
+
+    with st.expander("Download SPF-based data"):
+        st.caption(
+            "This exports the monthly SPF series used by the model, plus the 10Y Treasury yield "
+            "and the calculated SPF-based risk premium spread."
+        )
+        st.download_button(
+            label="Download SPF-based data as CSV",
+            data=spf_download.to_csv(index=False).encode("utf-8"),
+            file_name="spf_based_duration_timing_data.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
 signals = build_duration_signals(
     yields=yields,
     rolling_window=rolling_window,
@@ -284,6 +328,7 @@ signals = build_duration_signals(
     weights=weights,
     threshold=threshold,
     value_choice=value_choice,
+    risk_premium_method=risk_premium_method,
 )
 
 latest = signals.dropna(subset=["Decision Score"]).tail(1)
@@ -528,6 +573,7 @@ with tabs[4]:
         carry_choice=carry_choice,
         value_choice=value_choice,
         momentum_lookback=momentum_lookback,
+        risk_premium_method=risk_premium_method,
         transaction_cost_bps=transaction_cost_bps,
         windows=grid_windows,
         thresholds=grid_thresholds,
