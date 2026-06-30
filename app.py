@@ -141,7 +141,7 @@ def percent_style(df: pd.DataFrame, percent_cols: list[str], number_cols: list[s
 
 
 st.title("Fixed Income Duration Timing Research")
-st.markdown("Built by Tyler Teter, CFPÂ®, CFA | [LinkedIn](https://www.linkedin.com/in/tylerteter/)")
+st.markdown("Built by Tyler Teter, CFP&reg;, CFA | [LinkedIn](https://www.linkedin.com/in/tylerteter/)")
 st.caption(
     "A style-premia-inspired model for evaluating when signals favor extending, "
     "staying neutral, or shortening Treasury duration."
@@ -177,9 +177,22 @@ with st.expander("How the math works"):
         duration score = weighted average of signal z-scores
         ```
 
-        The threshold creates two cutoffs around zero. With a `0.50` threshold,
-        scores above `+0.50` are overweight duration, scores below `-0.50` are
-        underweight duration, and scores from `-0.50` to `+0.50` are neutral.
+        The threshold is the amount of evidence the model requires before it
+        moves away from neutral. Think of zero as "mixed signals." A positive
+        score means the weighted signals lean toward longer duration, and a
+        negative score means they lean toward shorter duration. The threshold
+        decides how strong that lean has to be before the model acts on it.
+
+        With a `0.50` threshold, the app creates a neutral band from `-0.50` to
+        `+0.50`. Scores above `+0.50` are strong enough to classify as
+        overweight duration. Scores below `-0.50` are strong enough to classify
+        as underweight duration. Scores inside the band are treated as neutral
+        because the signal is not far enough from zero.
+
+        Lowering the threshold makes the model more sensitive: it will switch
+        regimes more often, but it may react to noise. Raising the threshold
+        makes the model more selective: it will spend more time neutral and only
+        move to overweight or underweight when the combined signal is stronger.
 
         For background, see [standard score / z-score math](https://en.wikipedia.org/wiki/Standard_score)
         and the Newfound Research article that inspired this model:
